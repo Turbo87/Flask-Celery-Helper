@@ -27,13 +27,13 @@ class _LockManager(object):
     def __init__(self, celery_self, timeout, include_args, args, kwargs):
         """May raise NotImplementedError if the Celery backend is not supported.
 
-        Positional arguments:
-        celery_self -- from wrapped() within single_instance(). It is the `self` object specified in a binded Celery
-            task definition (implicit first argument of the Celery task when @celery.task(bind=True) is used).
-        timeout -- lock's timeout value in seconds.
-        include_args -- if single instance should take arguments into account (boolean).
-        args -- the task instance's args.
-        kwargs -- the task instance's kwargs.
+        :param celery_self: from ``wrapped()`` within ``single_instance()``. It is the ``self`` object
+            specified in a binded Celery task definition (implicit first argument of the Celery task
+            when ``@celery.task(bind=True)`` is used).
+        :param timeout: lock's timeout value in seconds.
+        :param bool include_args: if single instance should take arguments into account.
+        :param args: the task instance's args.
+        :param kwargs: the task instance's kwargs.
         """
         self.celery_self = celery_self
         self.timeout = timeout
@@ -124,7 +124,9 @@ class _LockManagerDB(_LockManager):
 
     @property
     def is_already_running(self):
-        """Returns True if lock exists and has not timed out."""
+        """
+        :returns: ``True`` if lock exists and has not timed out.
+        """
         date_done = (self.restore_group(self.task_identifier) or dict()).get('date_done')
         if not date_done:
             return False
@@ -139,15 +141,12 @@ class _LockManagerDB(_LockManager):
 def _select_manager(backend_name):
     """Selects the proper LockManager based on the current backend used by Celery.
 
-    Raises:
-    NotImplementedError if Celery is using an unsupported backend.
+    :raises NotImplementedError: if Celery is using an unsupported backend.
 
-    Positional arguments:
-    backend -- Class name of the current Celery backend. Usually value of:
-        current_app.extensions['celery'].celery.backend.__class__.__name__.
+    :param str backend_name: Class name of the current Celery backend. Usually value of:
+        ``current_app.extensions['celery'].celery.backend.__class__.__name__``.
 
-    Returns:
-    Class definition object (not instance). One of the _LockManager* classes.
+    :returns: Class definition object (not instance). One of the ``_LockManager*`` classes.
     """
     if backend_name == 'RedisBackend':
         lock_manager = _LockManagerRedis
@@ -159,7 +158,7 @@ def _select_manager(backend_name):
 
 
 class _CeleryState(object):
-    """Remembers the configuration for the (celery, app) tuple. Modeled from SQLAlchemy."""
+    """Remembers the configuration for the ``(celery, app)`` tuple. Modeled from SQLAlchemy."""
 
     def __init__(self, celery, app):
         self.celery = celery
@@ -170,27 +169,26 @@ class _CeleryState(object):
 class Celery(CeleryClass):
     """Celery extension for Flask applications.
 
-    Involves a hack to allow views and tests importing the celery instance from extensions.py to access the regular
-    Celery instance methods. This is done by subclassing celery.Celery and overwriting celery._state._register_app()
-    with a lambda/function that does nothing at all.
+    Involves a hack to allow views and tests importing the celery instance from ``extensions.py`` to access the regular
+    Celery instance methods. This is done by subclassing ``celery.Celery`` and overwriting
+    ``celery._state._register_app()`` with a lambda/function that does nothing at all.
 
-    That way, on the first super() in this class' __init__(), all of the required instance objects are initialized, but
-    the Celery application is not registered. This class will be initialized in extensions.py but at that moment the
-    Flask application is not yet available.
+    That way, on the first ``super()`` in this class' ``__init__()``, all of the required instance objects are
+    initialized, but the Celery application is not registered. This class will be initialized in ``extensions.py``
+    but at that moment the Flask application is not yet available.
 
-    Then, once the Flask application is available, this class' init_app() method will be called, with the Flask
-    application as an argument. init_app() will again call celery.Celery.__init__() but this time with the
-    celery._state._register_app() restored to its original functionality. in init_app() the actual Celery application is
-    initialized like normal.
+    Then, once the Flask application is available, this class' ``init_app()`` method will be called, with the Flask
+    application as an argument. ``init_app()`` will again call ``celery.Celery.__init__()`` but this time with the
+    ``celery._state._register_app()`` restored to its original functionality. In ``init_app()`` the actual Celery
+    application is initialized like normal.
     """
 
     def __init__(self, app=None):
         """If app argument provided then initialize celery using application config values.
 
-        If no app argument provided you should do initialization later with init_app method.
+        If no app argument provided you should do initialization later with the ``init_app()`` method.
 
-        Keyword arguments:
-        app -- Flask application instance.
+        :param flask.Flask app: Flask application instance.
         """
         self.original_register_app = _state._register_app  # Backup Celery app registration function.
         _state._register_app = lambda _: None  # Upon Celery app registration attempt, do nothing.
@@ -201,8 +199,7 @@ class Celery(CeleryClass):
     def init_app(self, app):
         """Actual method to read celery settings from app configuration and initialize the celery instance.
 
-        Positional arguments:
-        app -- Flask application instance.
+        :param flask.Flask app: Flask application instance.
         """
         _state._register_app = self.original_register_app  # Restore Celery app registration function.
         if not hasattr(app, 'extensions'):
@@ -234,7 +231,7 @@ class Celery(CeleryClass):
 def single_instance(func=None, lock_timeout=None, include_args=False):
     """Celery task decorator. Forces the task to have only one running instance at a time.
 
-    Use with binded tasks (@celery.task(bind=True)).
+    Use with binded tasks (``@celery.task(bind=True)``).
 
     Modeled after:
     http://loose-bits.com/2010/10/distributed-task-locking-in-celery.html
@@ -242,26 +239,25 @@ def single_instance(func=None, lock_timeout=None, include_args=False):
 
     Written by @Robpol86.
 
-    Raises:
-    OtherInstanceError -- if another instance is already running.
+    :raises OtherInstanceError: if another instance is already running.
 
-    Positional arguments:
-    func -- the function to decorate, must be also decorated by @celery.task.
+    :param func: the function to decorate, must be also decorated by ``@celery.task``.
 
-    Keyword arguments:
-    lock_timeout -- lock timeout in seconds plus five more seconds, in-case the task crashes and fails to release the
-        lock. If not specified, the values of the task's soft/hard limits are used. If all else fails, timeout will be 5
-        minutes.
-    include_args -- include the md5 checksum of the arguments passed to the task in the Redis key. This allows the same
-        task to run with different arguments, only stopping a task from running if another instance of it is running
-        with the same arguments.
+    :param lock_timeout: lock timeout in seconds plus five more seconds, in-case the task crashes and fails to release
+        the lock. If not specified, the values of the task's soft/hard limits are used. If all else fails, timeout will
+        be 5 minutes.
+
+    :param bool include_args: include the md5 checksum of the arguments passed to the task in the Redis key. This
+        allows the same task to run with different arguments, only stopping a task from running if another instance
+        of it is running with the same arguments.
     """
+
     if func is None:
         return partial(single_instance, lock_timeout=lock_timeout, include_args=include_args)
 
     @wraps(func)
     def wrapped(celery_self, *args, **kwargs):
-        """Wrapped Celery task, for single_instance()."""
+        """Wrapped Celery task, for ``single_instance()``."""
         # Select the manager and get timeout.
         timeout = (
             lock_timeout or celery_self.soft_time_limit or celery_self.time_limit
